@@ -34,3 +34,21 @@ jobs:
         run: |
           echo Add other actions to build,
           echo test, and deploy your project.
+      # 配置 git
+      - name: Set git
+        run: |
+          sudo apt-get install git
+          git config --global user.name "light-mini"
+          git config --global user.email "249068920@qq.com"
+      # 下载设备树、内核和厂商文件
+      - name: Clone vendor trees
+        run: |
+          mkdir -p vendor/xiaomi
+          git clone https://github.com/TheMuppets/proprietary_vendor_xiaomi.git -b lineage-21 vendor/xiaomi
+          tar -cf vendor_xiaomi.tar vendor/xiaomi
+      # 上传编译结果
+      - name: Upload Build
+        uses: actions/upload-artifact@v3
+        with:
+          name: vendor_xiaomi
+          path: vendor_xiaomi.tar
