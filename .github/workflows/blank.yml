@@ -22,36 +22,90 @@ jobs:
     env:
       GIT_USERNAME: "light-mini"
       GIT_EMAIL: "249068920@qq.com"
+      DEVICE: "polaris"  # 设备代号
+      ROM_NAME: "lineageOS"
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
-
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+        with:
+          fetch-depth: 0
       # 配置 git
       - name: Set git
         run: |
-          sudo apt-get install git
+          sudo apt-get update
+          sudo apt-get install ccache bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs \
+          gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 \
+          libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev lib32ncurses5-dev \
+          libncurses5 libncurses5-dev -y
           git config --global user.name "${GIT_USERNAME}"
           git config --global user.email "${GIT_EMAIL}"
-      # 下载设备树、内核和厂商文件
-      - name: Clone vendor trees
+      # 安装 repo 工具
+      - name: Install Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install repo tool
         run: |
-          mkdir -p vendor/xiaomi
-          git clone https://github.com/TheMuppets/proprietary_vendor_xiaomi.git -b lineage-21 vendor/xiaomi
-          tar -cf vendor_xiaomi.tar vendor/xiaomi
+          # 下载repo工具并移动到系统路径中
+          curl https://mirrors.tuna.tsinghua.edu.cn/git/git-repo -o repo > repo
+          chmod a+x repo
+          sudo mv repo /usr/local/bin/
+      # 配置 CCache
+      - name: Configure CCache
+        run: |
+          export USE_CCACHE=1
+          export CCACHE_EXEC=$(which ccache)
+          export CCACHE_DIR=$HOME/.ccache
+          export CCACHE_MAXSIZE=20G
+          ccache -o compression=true
+          ccache -M 20G
+
+      # 缓存 CCache 目录
+      - name: Cache CCache
+        uses: actions/cache@v3
+        with:
+          path: $HOME/.ccache
+          key: ${{ runner.os }}-ccache-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ github.ref }}-
+            ${{ runner.os }}-ccache-
+      # 初始化 PixelOS 源码
+      - name: Init PixelOS
+        run: |
+          mkdir -p ~/android/lineage
+          cd ~/android/lineage
+          git lfs install
+          repo init -u https://github.com/LineageOS/android.git -b lineage-21.0 --git-lfs --depth=1
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      # 下载设备树、内核和厂商文件
+      - name: Clone device, kernel, vendor trees
+        run: |
+          git clone https://github.com/TheMuppets/proprietary_vendor_xiaomi_polaris.git -b lineage-21 vendor/xiaomi/polaris
+          git clone https://github.com/TheMuppets/proprietary_vendor_xiaomi_sdm845-common.git -b lineage-21 vendor/xiaomi/sdm845-common
+
+      # 设置编译环境
+      - name: Setup build environment
+        run: |
+          source build/envsetup.sh
+          breakfast ${DEVICE}
+          cat ./.repo/local_manifests/roomservice.xml
+          croot
+#          brunch polaris
+          lunch lineage_${DEVICE}-eng
+
+      # 开始编译
+      - name: Start Build
+        run: |
+          mka bacon -j$(nproc --all)
+
       # 上传编译结果
       - name: Upload Build
         uses: actions/upload-artifact@v3
         with:
-          name: vendor_xiaomi
-          path: vendor_xiaomi.tar
+          name: ${ROM_NAME}-${DEVICE}
+          path: out/target/product/${DEVICE}/*.zip
+
