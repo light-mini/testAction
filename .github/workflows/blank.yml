@@ -94,7 +94,6 @@ jobs:
           breakfast ${DEVICE}
           cat ./.repo/local_manifests/roomservice.xml
           croot
-#          brunch polaris
           lunch lineage_${DEVICE}-eng
 
       # 开始编译
